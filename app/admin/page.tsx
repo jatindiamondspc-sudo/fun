@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { Logo } from "@/components/Header";
-import { getDb } from "@/lib/db";
+import { dbErrorText, getDb, type Sql } from "@/lib/db";
 import { PRICE_OPTIONS } from "@/lib/validation";
 
 // Waitlist dashboard. Protected by middleware.ts.
@@ -56,11 +56,17 @@ function Table({ title, head, rows }: { title: string; head: string[]; rows: Rea
   );
 }
 
-export default async function AdminPage() {
-  const sql = getDb();
-  if (!sql) return <main className="p-8">Set DATABASE_URL to see signups.</main>;
+function Notice({ children }: { children: React.ReactNode }) {
+  return (
+    <main className="mx-auto max-w-2xl px-4 py-12 sm:px-6">
+      <Logo />
+      <div className="mt-6 rounded-2xl bg-rose-50 p-5 text-rose-900 ring-1 ring-rose-200">{children}</div>
+    </main>
+  );
+}
 
-  const [totals, daily, areas, prices, sources, referrers, recent] = await Promise.all([
+function loadStats(sql: Sql) {
+  return Promise.all([
     sql<{ gender: string; n: number }[]>`select gender, count(*)::int as n from waitlist group by gender`,
     sql<{ day: string; women: number; men: number }[]>`
       select to_char(d, 'DD Mon') as day, women, men from (
@@ -104,6 +110,29 @@ export default async function AdminPage() {
       select created_at, gender, name, phone, age, area, instagram, email, price_willing, utm_source, referred_by
       from waitlist order by created_at desc limit 100`,
   ]);
+}
+
+export default async function AdminPage() {
+  const sql = getDb();
+  if (!sql) return <Notice>Set DATABASE_URL in .env.local to see signups.</Notice>;
+
+  let stats: Awaited<ReturnType<typeof loadStats>>;
+  try {
+    stats = await loadStats(sql);
+  } catch (error) {
+    console.error("[admin] database query failed", error);
+    return (
+      <Notice>
+        <p className="font-semibold">Can&apos;t load signups from the database.</p>
+        <p className="mt-2 font-mono text-sm break-all">{dbErrorText(error)}</p>
+        <p className="mt-3 text-sm">
+          Check that Postgres is running, the waitlist table exists (db/schema.sql), and DATABASE_URL is right.
+        </p>
+      </Notice>
+    );
+  }
+
+  const [totals, daily, areas, prices, sources, referrers, recent] = stats;
 
   const women = totals.find((t) => t.gender === "woman")?.n ?? 0;
   const men = totals.find((t) => t.gender === "man")?.n ?? 0;

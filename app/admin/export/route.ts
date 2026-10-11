@@ -1,4 +1,4 @@
-import { getDb } from "@/lib/db";
+import { dbErrorText, getDb } from "@/lib/db";
 
 // CSV of every signup. Protected by middleware.ts.
 
@@ -16,10 +16,16 @@ export async function GET() {
   const sql = getDb();
   if (!sql) return new Response("DATABASE_URL is not set", { status: 500 });
 
-  const rows = await sql`
-    select created_at, gender, name, phone, age, area, instagram, email, price_willing,
-           referral_code, referred_by, utm_source, utm_medium, utm_campaign
-    from waitlist order by created_at`;
+  let rows;
+  try {
+    rows = await sql`
+      select created_at, gender, name, phone, age, area, instagram, email, price_willing,
+             referral_code, referred_by, utm_source, utm_medium, utm_campaign
+      from waitlist order by created_at`;
+  } catch (error) {
+    console.error("[admin] CSV export failed", error);
+    return new Response(`Can't load signups from the database: ${dbErrorText(error)}`, { status: 503 });
+  }
   const columns = rows.columns.map((column) => column.name);
   const lines = [columns.join(","), ...rows.map((row) => columns.map((c) => csvCell(row[c])).join(","))];
   const date = new Date().toISOString().slice(0, 10);
