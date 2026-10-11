@@ -1,6 +1,7 @@
--- HerCall waitlist. Run this once in Supabase → SQL Editor.
+-- HerCall waitlist table. Run once as the database owner:
+--   psql "$DATABASE_URL" -f db/schema.sql
 
-create table if not exists public.waitlist (
+create table if not exists waitlist (
   id uuid primary key default gen_random_uuid(),
   created_at timestamptz not null default now(),
 
@@ -25,9 +26,5 @@ create table if not exists public.waitlist (
   constraint waitlist_referral_code_unique unique (referral_code)
 );
 
-create index if not exists waitlist_referred_by_idx on public.waitlist (referred_by);
-create index if not exists waitlist_created_at_idx on public.waitlist (created_at);
-
--- RLS on with no policies: the public (anon) key can't read or write this table.
--- Only the server, using the service role key, can insert.
-alter table public.waitlist enable row level security;
+create index if not exists waitlist_referred_by_idx on waitlist (referred_by);
+create index if not exists waitlist_created_at_idx on waitlist (created_at);

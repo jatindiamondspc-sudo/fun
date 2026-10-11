@@ -62,6 +62,8 @@ export const womenSchema = z.object({ name, phone, age, area, instagram, consent
 
 export const menSchema = womenSchema.extend({ email, priceWilling });
 
+export type MenSignup = z.infer<typeof menSchema>;
+
 export function schemaFor(variant: Variant) {
   return variant === "men" ? menSchema : womenSchema;
 }

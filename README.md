@@ -9,20 +9,24 @@ This repo is **Phase 1**: mobile-first landing pages and waitlists that ads poin
 | `/` | Women's landing page + waitlist (main ad target) |
 | `/men` | Men's early-access waitlist, including a "what would you pay?" question |
 | `/privacy`, `/terms` | Privacy Policy and Terms (templates, see the launch checklist) |
+| `/admin` | Password-protected signups dashboard + CSV download |
 
 After signing up, everyone gets a personal invite link (`/?ref=CODE`) and a "Share on WhatsApp" button.
 
-**Stack:** Next.js 15 (App Router) · TypeScript · Tailwind CSS v4 · Supabase (Postgres) · zod · Vercel.
+**Stack:** Next.js 15 (App Router) · TypeScript · Tailwind CSS v4 · Postgres · zod. Runs on a Hostinger VPS with Nginx + PM2.
 
 ## Run it locally
 
+You need Node 18.18+ and a Postgres database.
+
 ```bash
 npm install
-cp .env.example .env.local   # then fill in the Supabase values (see below)
-npm run dev                  # http://localhost:3000
+cp .env.example .env.local     # set DATABASE_URL (and ADMIN_PASSWORD to try /admin)
+psql "$DATABASE_URL" -f db/schema.sql
+npm run dev                    # http://localhost:3000
 ```
 
-Without Supabase keys the pages work, but submitting the form shows a "Waitlist isn't configured" message.
+Without `DATABASE_URL` the pages work, but submitting the form shows a "Waitlist isn't configured" message.
 
 | Script | |
 |---|---|
@@ -31,25 +35,9 @@ Without Supabase keys the pages work, but submitting the form shows a "Waitlist 
 | `npm run lint` | ESLint |
 | `npm test` | Form validation tests |
 
-## Set up Supabase (stores the waitlist)
+## Deploy
 
-1. Create a free project at [supabase.com](https://supabase.com). Pick the **Mumbai (ap-south-1)** region so data stays close to users.
-2. Open **SQL Editor**, paste [`supabase/migrations/001_waitlist.sql`](supabase/migrations/001_waitlist.sql), and run it.
-3. Go to **Project Settings → API** and copy:
-   - the **Project URL** → `SUPABASE_URL`
-   - the **service_role** key (or the newer **Secret** key) → `SUPABASE_SERVICE_ROLE_KEY`
-4. Put both in `.env.local`. The key is only used on the server. Never put it in a `NEXT_PUBLIC_` variable.
-
-The table has Row Level Security on with no policies, so the public "anon" key can't read anyone's data.
-
-## Deploy on Vercel
-
-1. Import this GitHub repo at [vercel.com/new](https://vercel.com/new).
-2. Add the environment variables from `.env.example`:
-   - `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`
-   - `NEXT_PUBLIC_SITE_URL` = your live URL, e.g. `https://hercall.in` (used for link previews)
-   - Optional: `NEXT_PUBLIC_META_PIXEL_ID`, `NEXT_PUBLIC_GA_ID`
-3. Deploy, then sign up once yourself to check that the row shows up in Supabase.
+See **[DEPLOY.md](DEPLOY.md)**: step-by-step setup on the Hostinger VPS (Postgres, PM2, Nginx, HTTPS, backups), next to the existing ShipTrack app.
 
 ## Running ads
 
@@ -64,7 +52,15 @@ When the Pixel / GA IDs are set, every successful signup fires a Meta **Lead** e
 
 ## Seeing your signups
 
-**Supabase → Table Editor → `waitlist`** shows every signup, and you can export it to CSV from there. Handy queries for the SQL Editor:
+Open **`/admin`** and log in with `ADMIN_USER` / `ADMIN_PASSWORD`. It shows:
+- totals, signups per day, and signups per area
+- what men said they'd pay
+- which ads and referrers brought people
+- the latest 100 signups, with WhatsApp links
+
+**Download CSV** exports everything.
+
+For anything else, query Postgres directly (`psql "$DATABASE_URL"`):
 
 ```sql
 -- Signups per day, women vs men
@@ -97,7 +93,7 @@ group by 1, 2 order by 3 desc limit 20;
 - [ ] Check that the "HerCall" name is free (trademark search) and buy the domain
 - [ ] Replace `contactEmail` in `lib/site.ts` with a real inbox
 - [ ] Have a lawyer review `/privacy` and `/terms` (DPDP Act 2023)
-- [ ] Create the Supabase project and run the SQL
-- [ ] Deploy to Vercel with all env vars, then do a test signup on the live site
+- [ ] Deploy on the VPS following [DEPLOY.md](DEPLOY.md), then do a test signup on the live site
+- [ ] Set a strong `ADMIN_PASSWORD` and turn on daily database backups
 - [ ] Add the Meta Pixel / GA4 IDs and confirm the Lead event fires
 - [ ] Make sure the app can deliver what the pages promise (free for women, verified men, women message first, block/report)
