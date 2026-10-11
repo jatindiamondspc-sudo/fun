@@ -1,8 +1,9 @@
 "use server";
 
 import { randomInt } from "node:crypto";
-import { getSupabase } from "@/lib/supabase";
-import { fieldErrorsFrom, schemaFor, type FieldErrors, type Variant } from "@/lib/validation";
+import postgres from "postgres";
+import { getDb } from "@/lib/db";
+import { fieldErrorsFrom, schemaFor, type FieldErrors, type MenSignup, type Variant } from "@/lib/validation";
 
 export type WaitlistState =
   | { status: "idle" }
@@ -37,18 +38,16 @@ export async function joinWaitlist(_prev: WaitlistState, formData: FormData): Pr
   const parsed = schemaFor(variant).safeParse(Object.fromEntries(formData));
   if (!parsed.success) return { status: "error", fieldErrors: fieldErrorsFrom(parsed.error) };
 
-  const supabase = getSupabase();
-  if (!supabase) {
-    console.error("[waitlist] SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY are not set");
+  const sql = getDb();
+  if (!sql) {
+    console.error("[waitlist] DATABASE_URL is not set");
     return process.env.NODE_ENV === "production"
       ? SAVE_FAILED
-      : {
-          status: "error",
-          message: "Waitlist isn't configured: set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in .env.local.",
-        };
+      : { status: "error", message: "Waitlist isn't configured: set DATABASE_URL in .env.local." };
   }
 
   const data = parsed.data;
+  const menData = variant === "men" ? (data as MenSignup) : null;
   const ref = optionalField(formData, "ref")?.toUpperCase() ?? null;
   const row = {
     gender: variant === "men" ? "man" : "woman",
@@ -57,8 +56,8 @@ export async function joinWaitlist(_prev: WaitlistState, formData: FormData): Pr
     age: data.age,
     area: data.area,
     instagram: data.instagram || null,
-    email: "email" in data ? data.email : null,
-    price_willing: "priceWilling" in data ? data.priceWilling : null,
+    email: menData?.email ?? null,
+    price_willing: menData?.priceWilling ?? null,
     consent: true,
     referred_by: ref && CODE_PATTERN.test(ref) ? ref : null,
     utm_source: optionalField(formData, "utm_source"),
@@ -66,25 +65,31 @@ export async function joinWaitlist(_prev: WaitlistState, formData: FormData): Pr
     utm_campaign: optionalField(formData, "utm_campaign"),
   };
 
-  // Retry only on the (rare) referral-code collision.
-  for (let attempt = 0; attempt < 3; attempt++) {
-    const referralCode = makeReferralCode();
-    const { error } = await supabase.from("waitlist").insert({ ...row, referral_code: referralCode });
-    if (!error) return { status: "success", referralCode };
+  try {
+    // Retry only on the (rare) referral-code collision.
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const referralCode = makeReferralCode();
+      try {
+        const inserted = await sql`
+          insert into waitlist ${sql({ ...row, referral_code: referralCode })}
+          on conflict on constraint waitlist_phone_unique do nothing
+          returning referral_code`;
+        if (inserted.length > 0) return { status: "success", referralCode };
 
-    if (error.code !== "23505") {
-      console.error("[waitlist] insert failed", error);
-      return SAVE_FAILED;
+        // Phone is already on the list. Same response as a new signup, so nobody
+        // can use this form to check whether a number is on a dating waitlist.
+        const [existing] = await sql`select referral_code from waitlist where phone = ${data.phone}`;
+        if (existing) return { status: "success", referralCode: existing.referral_code };
+        return SAVE_FAILED;
+      } catch (error) {
+        const codeTaken =
+          error instanceof postgres.PostgresError && error.constraint_name === "waitlist_referral_code_unique";
+        if (!codeTaken) throw error;
+      }
     }
-
-    if (error.message.includes("waitlist_phone_unique")) {
-      // Same response as a new signup, so nobody can use this form to check
-      // whether a phone number is already on a dating waitlist.
-      const existing = await supabase.from("waitlist").select("referral_code").eq("phone", data.phone).single();
-      if (existing.data) return { status: "success", referralCode: existing.data.referral_code };
-      console.error("[waitlist] duplicate phone lookup failed", existing.error);
-      return SAVE_FAILED;
-    }
+  } catch (error) {
+    console.error("[waitlist] insert failed", error);
+    return SAVE_FAILED;
   }
 
   console.error("[waitlist] could not generate a unique referral code");

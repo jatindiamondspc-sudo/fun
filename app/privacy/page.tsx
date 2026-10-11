@@ -46,8 +46,8 @@ export default function PrivacyPage() {
       <h2>Who we share it with</h2>
       <p>
         We never sell your data, and your number is never shown to other users. We share data only with service
-        providers that help us run the waitlist: website hosting (Vercel), our database (Supabase) and, if enabled,
-        Meta and Google for ad measurement. We may also disclose data if the law requires it.
+        providers that help us run the waitlist: our server host (Hostinger), where the website and database run, and,
+        if enabled, Meta and Google for ad measurement. We may also disclose data if the law requires it.
       </p>
 
       <h2>How long we keep it</h2>
